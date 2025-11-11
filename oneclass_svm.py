@@ -1,0 +1,131 @@
+import os
+import numpy as np
+import pandas as pd
+from scipy.io import loadmat
+from sklearn.svm import OneClassSVM
+from sklearn.metrics import (
+    roc_auc_score, make_scorer,
+    average_precision_score,
+    f1_score,
+    recall_score,
+    balanced_accuracy_score,
+    matthews_corrcoef
+)
+from sklearn.model_selection import train_test_split, GridSearchCV, KFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, RobustScaler
+
+from conf import *
+
+all_run_results = []
+
+# --- Funkcja scoringowa ---
+def inverted_roc_auc_scorer(y_true, y_score, **kwargs):
+    """Odwrócony ROC-AUC (dla metod, gdzie -score oznacza outlier)."""
+    return roc_auc_score(y_true, -y_score)
+
+# --- Pętla po zbiorach danych ---
+for dataset_name in DATASET_NAMES:
+    print(f"\n{'=' * 60}")
+    print(f"Rozpoczynam przetwarzanie zbioru: {dataset_name.upper()} (One-Class SVM)")
+    print(f"{'=' * 60}")
+
+    FILE_NAME = os.path.join(DATASET_DIR, f"{dataset_name}.mat")
+
+    try:
+        data = loadmat(FILE_NAME)
+        X = data['X']
+        y = data['y'].ravel()
+        print(f"Załadowano. Wymiary X: {X.shape}, Wymiary y: {y.shape}")
+    except FileNotFoundError:
+        print(f"BŁĄD: Nie znaleziono pliku '{FILE_NAME}'. Pomijam ten zbiór.")
+        continue
+
+    # --- Podział danych ---
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y,
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE,
+        stratify=y
+    )
+
+    # --- Pipeline ---
+    pipe = Pipeline([
+        ('scaler', 'passthrough'),
+        ('model', OneClassSVM())
+    ])
+
+    # --- Siatka parametrów ---
+    param_grid = {
+        'scaler': [StandardScaler(), RobustScaler(), 'passthrough'],
+        'model__kernel': ['rbf', 'sigmoid'],
+        'model__gamma': ['scale', 'auto', 0.01, 0.1, 1],
+        'model__nu': [0.01, 0.05, 0.1]  # odpowiednik contamination
+    }
+
+    kfold_cv = KFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+    scoring_metric = make_scorer(inverted_roc_auc_scorer, needs_threshold=True)
+
+    grid_search = GridSearchCV(
+        estimator=pipe,
+        param_grid=param_grid,
+        scoring=scoring_metric,
+        cv=kfold_cv,
+        verbose=1,
+        n_jobs=-1
+    )
+
+    print(f"Uruchamiam GridSearchCV dla One-Class SVM na zbiorze '{dataset_name}'...")
+    grid_search.fit(X_train, y_train)
+
+    # --- Najlepsze wyniki (CV) ---
+    print("\n--- Najlepsze parametry (CV) ---")
+    print(grid_search.best_params_)
+    print(f"ROC-AUC (CV): {grid_search.best_score_:.4f}")
+
+    # --- Ocena testowa ---
+    best_model = grid_search.best_estimator_
+    y_scores_test = best_model.decision_function(X_test)
+    y_pred_test = best_model.predict(X_test)
+    y_pred_binary = np.where(y_pred_test == -1, 1, 0)
+
+    test_roc_auc = roc_auc_score(y_test, -y_scores_test)
+    test_pr_auc = average_precision_score(y_test, -y_scores_test)
+    test_f1 = f1_score(y_test, y_pred_binary, pos_label=1)
+    test_recall = recall_score(y_test, y_pred_binary, pos_label=1)
+    test_balanced = balanced_accuracy_score(y_test, y_pred_binary)
+    test_mcc = matthews_corrcoef(y_test, y_pred_binary)
+
+    print("\n--- Testowe metryki ---")
+    print(f"ROC-AUC: {test_roc_auc:.4f}")
+    print(f"PR-AUC: {test_pr_auc:.4f}")
+    print(f"F1: {test_f1:.4f}")
+    print(f"Recall: {test_recall:.4f}")
+    print(f"Balanced Acc: {test_balanced:.4f}")
+    print(f"MCC: {test_mcc:.4f}")
+
+    run_summary = {
+        'Dataset': dataset_name,
+        'Model': 'OneClassSVM',
+        'CV_ROC_AUC': grid_search.best_score_,
+        'Test_ROC_AUC': test_roc_auc,
+        'Test_PR_AUC': test_pr_auc,
+        'Test_F1_out': test_f1,
+        'Test_Recall_out': test_recall,
+        'Test_Balanced_Acc': test_balanced,
+        'Test_MCC': test_mcc,
+        'Best_Scaler': str(grid_search.best_params_['scaler']),
+        'Best_Kernel': grid_search.best_params_['model__kernel'],
+        'Best_Gamma': grid_search.best_params_['model__gamma'],
+        'Best_Nu': grid_search.best_params_['model__nu']
+    }
+
+    all_run_results.append(run_summary)
+
+# --- Podsumowanie ---
+print(f"\n{'=' * 60}")
+print("Zakończono wszystkie eksperymenty One-Class SVM. Podsumowanie:")
+print(f"{'=' * 60}")
+
+results_df = pd.DataFrame(all_run_results)
+print(results_df.set_index('Dataset').to_string())
