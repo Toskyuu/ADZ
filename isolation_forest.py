@@ -15,11 +15,22 @@ from sklearn.model_selection import train_test_split, GridSearchCV, KFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
+# Zakładam, że te zmienne są w conf.py:
+# DATASET_NAMES = ['cardio', 'musk', 'vowels']
+# DATASET_DIR = 'datasets'
+# TEST_SIZE = 0.2
+# RANDOM_STATE = 42
+# CV_SPLITS = 5
 from conf import *
+
+# --- NOWOŚĆ: Utworzenie katalogu na wyniki ---
+# Wszystkie pliki CSV i NPZ trafią tutaj
+RESULTS_DIR = 'results_if'
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 all_run_results = []
 
-# --- 2. Funkcja scoringowa ---
+# --- 2. Funkcja scoringowa (bez zmian) ---
 def inverted_roc_auc_scorer(y_true, y_score, **kwargs):
     return roc_auc_score(y_true, -y_score)
 
@@ -40,7 +51,7 @@ for dataset_name in DATASET_NAMES:
         print(f"BŁĄD: Nie znaleziono pliku '{FILE_NAME}'. Pomijam ten zbiór.")
         continue
 
-    # --- Podział danych ---
+    # --- Podział danych (bez zmian) ---
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=TEST_SIZE,
@@ -48,7 +59,7 @@ for dataset_name in DATASET_NAMES:
         stratify=y
     )
 
-    # --- Pipeline i GridSearch ---
+    # --- Pipeline i GridSearch (bez zmian) ---
     pipe = Pipeline([
         ('scaler', 'passthrough'),
         ('model', IsolationForest(random_state=RANDOM_STATE))
@@ -76,16 +87,31 @@ for dataset_name in DATASET_NAMES:
     print(f"Uruchamiam GridSearchCV dla Isolation Forest na zbiorze '{dataset_name}'...")
     grid_search.fit(X_train, y_train)
 
-    # --- Najlepsze wyniki ---
+    # --- NOWOŚĆ: Zapis pełnych wyników CV do CSV ---
+    # To da nam dane do wykresów wpływu skalowania i contamination
+    cv_results_df = pd.DataFrame(grid_search.cv_results_)
+    cv_filename = os.path.join(RESULTS_DIR, f"{dataset_name}_if_cv_results.csv")
+    cv_results_df.to_csv(cv_filename, index=False)
+    print(f"Zapisano pełne wyniki CV do: {cv_filename}")
+
+
+    # --- Najlepsze wyniki (bez zmian) ---
     print("\n--- Najlepsze parametry (CV) ---")
     print(grid_search.best_params_)
     print(f"ROC-AUC (CV): {grid_search.best_score_:.4f}")
 
-    # --- Ocena testowa ---
+    # --- Ocena testowa (logika bez zmian) ---
     best_model = grid_search.best_estimator_
     y_scores_test = best_model.decision_function(X_test)
     y_pred_test = best_model.predict(X_test)
     y_pred_binary = np.where(y_pred_test == -1, 1, 0)
+
+    # --- NOWOŚĆ: Zapis danych do krzywej PR ---
+    # To da nam dane do narysowania krzywej PR
+    pr_data_filename = os.path.join(RESULTS_DIR, f"{dataset_name}_if_pr_data.npz")
+    np.savez_compressed(pr_data_filename, y_test=y_test, y_scores=y_scores_test)
+    print(f"Zapisano dane PR do: {pr_data_filename}")
+
 
     test_roc_auc = roc_auc_score(y_test, -y_scores_test)
     test_pr_auc = average_precision_score(y_test, -y_scores_test)
@@ -104,6 +130,7 @@ for dataset_name in DATASET_NAMES:
     print(f"Balanced Acc: {test_balanced:.4f}")
     print(f"MCC: {test_mcc:.4f}")
 
+    # --- Zbieranie podsumowania (bez zmian) ---
     run_summary = {
         'Dataset': dataset_name,
         'Model': 'IsolationForest',
@@ -119,10 +146,16 @@ for dataset_name in DATASET_NAMES:
     }
     all_run_results.append(run_summary)
 
-# --- 4. Podsumowanie ---
+# --- 4. Podsumowanie (logika bez zmian) ---
 print(f"\n{'=' * 60}")
 print("Zakończono wszystkie eksperymenty. Podsumowanie:")
 print(f"{'=' * 60}")
 
 results_df = pd.DataFrame(all_run_results)
 print(results_df.set_index('Dataset').to_string())
+
+# --- NOWOŚĆ: Zapis tabeli podsumowującej do CSV ---
+# To da nam dane do głównego wykresu porównawczego
+summary_filename = os.path.join(RESULTS_DIR, "if_summary_results.csv")
+results_df.to_csv(summary_filename, index=False)
+print(f"\nZapisano tabelę podsumowującą do: {summary_filename}")
