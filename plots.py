@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import precision_recall_curve
 
-# --- 1. Konfiguracja (bez zmian) ---
 
 RESULTS_DIRS = {
     'IF': 'results_if',
@@ -19,9 +18,6 @@ os.makedirs(PLOT_DIR, exist_ok=True)
 plt.style.use('seaborn-v0_8-darkgrid')
 print(f"Rozpoczynam generowanie wykresów. Zostaną zapisane w folderze: {PLOT_DIR}")
 
-
-# --- 2. Funkcje pomocnicze do ładowania danych ---
-# (Te funkcje są bez zmian)
 
 def load_all_summaries():
     """Wczytuje wszystkie pliki 'summary_results.csv' i łączy je w jeden DataFrame."""
@@ -61,7 +57,6 @@ def load_all_cv_results():
 
     full_cv_df = pd.concat(all_cv_data, ignore_index=True)
 
-    # Ujednolicenie kolumn parametrów (contamination i nu)
     if 'param_model__nu' in full_cv_df.columns:
         full_cv_df['param_contamination'] = full_cv_df['param_model__nu']
     else:
@@ -81,14 +76,11 @@ def clean_scaler_name(scaler_str):
     if 'RobustScaler' in scaler_str:
         return 'RobustScaler'
     if 'passthrough' in scaler_str:
-        return 'Brak'  # Zmienione z 'Brak (passthrough)'
+        return 'Brak'
     return 'Inny'
 
 
-# --- 3. Funkcje generujące wykresy ---
-
 def plot_model_comparison(summary_df):
-    # ... (bez zmian) ...
     metrics_to_plot = ['Test_PR_AUC', 'Test_ROC_AUC', 'Test_F1_out', 'Test_Balanced_Acc']
     df_melted = summary_df.melt(
         id_vars=['Dataset', 'Model'],
@@ -120,7 +112,6 @@ def plot_model_comparison(summary_df):
 
 
 def plot_pr_curves(summary_df):
-    # ... (bez zmian) ...
     model_map = {'IsolationForest': 'IF', 'LocalOutlierFactor': 'LOF', 'OneClassSVM': 'SVM'}
     model_map_inv = {v: k for k, v in model_map.items()}
 
@@ -161,14 +152,11 @@ def plot_pr_curves(summary_df):
 def plot_contamination_effect(full_cv_df):
     """WYKRES 3: Wpływ parametru contamination/nu."""
 
-    # Przygotowanie danych
     df_plot = full_cv_df[['param_contamination', 'mean_test_score', 'Model', 'Dataset']].copy()
 
-    # ZMIANA: Konwertujemy na string, aby 'auto' i 0.01 były traktowane jako kategorie
     df_plot['param_contamination'] = df_plot['param_contamination'].astype(str)
     df_plot = df_plot.dropna(subset=['param_contamination'])
 
-    # ZMIANA: Ustawienie kolejności na osi X
     param_order = sorted(df_plot['param_contamination'].unique(),
                          key=lambda x: (x != 'auto', pd.to_numeric(x, errors='coerce')))
 
@@ -181,7 +169,6 @@ def plot_contamination_effect(full_cv_df):
         kind='point',
         height=4,
         aspect=0.8,
-        # ZMIANA: Wyłączenie "zakresów" (przedziałów ufności)
         errorbar=None,
         order=param_order
     )
@@ -212,7 +199,6 @@ def plot_scaling_effect(full_cv_df):
         height=4,
         aspect=0.8,
         order=['Brak', 'StandardScaler', 'RobustScaler'],
-        # ZMIANA: Wyłączenie "zakresów" (przedziałów ufności)
         errorbar=None
     )
 
@@ -226,8 +212,6 @@ def plot_scaling_effect(full_cv_df):
     print(f"Zapisano wykres 4: {plot_path}")
 
 
-# --- 4. Główna funkcja wykonawcza ---
-
 def main():
     print("--- Krok 1: Ładowanie danych podsumowujących ---")
     summary_df = load_all_summaries()
@@ -237,27 +221,21 @@ def main():
     print("--- Krok 2: Ładowanie pełnych danych CV ---")
     full_cv_df = load_all_cv_results()
     if full_cv_df is None:
-        # Ten błąd może wystąpić, jeśli nie uruchomiłeś zmodyfikowanych skryptów
         print("BŁĄD: full_cv_df jest pusty. Upewnij się, że uruchomiłeś zmodyfikowane skrypty IF, LOF i SVM,")
         print("aby wygenerować pliki *_cv_results.csv w folderach results_*.")
-        # Kontynuujemy, aby wygenerować wykresy 1 i 2, które mogą jeszcze działać
 
     print("\n--- Krok 3: Generowanie wykresów ---")
 
     if summary_df is not None:
-        # Wykres 1: Porównanie modeli i metryk
         plot_model_comparison(summary_df)
 
-        # Wykres 2: Krzywe PR
         plot_pr_curves(summary_df)
     else:
         print("Pominięto wykresy 1 i 2 z powodu braku danych podsumowujących.")
 
     if full_cv_df is not None:
-        # Wykres 3: Wpływ contamination
         plot_contamination_effect(full_cv_df)
 
-        # Wykres 4: Wpływ skalowania
         plot_scaling_effect(full_cv_df)
     else:
         print("Pominięto wykresy 3 i 4 z powodu braku danych CV.")

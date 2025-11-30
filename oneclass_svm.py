@@ -17,20 +17,17 @@ from sklearn.preprocessing import StandardScaler, RobustScaler
 
 from conf import *
 
-# --- NOWOŚĆ: Utworzenie katalogu na wyniki SVM ---
 RESULTS_DIR = 'results_svm'
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 all_run_results = []
 
 
-# --- Funkcja scoringowa (bez zmian) ---
 def inverted_roc_auc_scorer(y_true, y_score, **kwargs):
     """Odwrócony ROC-AUC (dla metod, gdzie -score oznacza outlier)."""
     return roc_auc_score(y_true, -y_score)
 
 
-# --- Pętla po zbiorach danych ---
 for dataset_name in DATASET_NAMES:
     print(f"\n{'=' * 60}")
     print(f"Rozpoczynam przetwarzanie zbioru: {dataset_name.upper()} (One-Class SVM)")
@@ -47,7 +44,6 @@ for dataset_name in DATASET_NAMES:
         print(f"BŁĄD: Nie znaleziono pliku '{FILE_NAME}'. Pomijam ten zbiór.")
         continue
 
-    # --- Podział danych (bez zmian) ---
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=TEST_SIZE,
@@ -55,18 +51,16 @@ for dataset_name in DATASET_NAMES:
         stratify=y
     )
 
-    # --- Pipeline (bez zmian) ---
     pipe = Pipeline([
         ('scaler', 'passthrough'),
         ('model', OneClassSVM())
     ])
 
-    # --- Siatka parametrów (bez zmian) ---
     param_grid = {
         'scaler': [StandardScaler(), RobustScaler(), 'passthrough'],
         'model__kernel': ['rbf', 'sigmoid'],
         'model__gamma': ['scale', 'auto', 0.01, 0.1, 1],
-        'model__nu': [0.01, 0.05, 0.1]  # odpowiednik contamination
+        'model__nu': [0.01, 0.05, 0.1]
     }
 
     kfold_cv = KFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
@@ -84,24 +78,20 @@ for dataset_name in DATASET_NAMES:
     print(f"Uruchamiam GridSearchCV dla One-Class SVM na zbiorze '{dataset_name}'...")
     grid_search.fit(X_train, y_train)
 
-    # --- NOWOŚĆ: Zapis pełnych wyników CV do CSV ---
     cv_results_df = pd.DataFrame(grid_search.cv_results_)
     cv_filename = os.path.join(RESULTS_DIR, f"{dataset_name}_svm_cv_results.csv")
     cv_results_df.to_csv(cv_filename, index=False)
     print(f"Zapisano pełne wyniki CV do: {cv_filename}")
 
-    # --- Najlepsze wyniki (CV) (bez zmian) ---
     print("\n--- Najlepsze parametry (CV) ---")
     print(grid_search.best_params_)
     print(f"ROC-AUC (CV): {grid_search.best_score_:.4f}")
 
-    # --- Ocena testowa (logika bez zmian) ---
     best_model = grid_search.best_estimator_
     y_scores_test = best_model.decision_function(X_test)
     y_pred_test = best_model.predict(X_test)
     y_pred_binary = np.where(y_pred_test == -1, 1, 0)
 
-    # --- NOWOŚĆ: Zapis danych do krzywej PR ---
     pr_data_filename = os.path.join(RESULTS_DIR, f"{dataset_name}_svm_pr_data.npz")
     np.savez_compressed(pr_data_filename, y_test=y_test, y_scores=y_scores_test)
     print(f"Zapisano dane PR do: {pr_data_filename}")
@@ -121,7 +111,6 @@ for dataset_name in DATASET_NAMES:
     print(f"Balanced Acc: {test_balanced:.4f}")
     print(f"MCC: {test_mcc:.4f}")
 
-    # --- Zbieranie podsumowania (bez zmian) ---
     run_summary = {
         'Dataset': dataset_name,
         'Model': 'OneClassSVM',
@@ -140,7 +129,6 @@ for dataset_name in DATASET_NAMES:
 
     all_run_results.append(run_summary)
 
-# --- Podsumowanie (logika bez zmian) ---
 print(f"\n{'=' * 60}")
 print("Zakończono wszystkie eksperymenty One-Class SVM. Podsumowanie:")
 print(f"{'=' * 60}")
@@ -148,7 +136,6 @@ print(f"{'=' * 60}")
 results_df = pd.DataFrame(all_run_results)
 print(results_df.set_index('Dataset').to_string())
 
-# --- NOWOŚĆ: Zapis tabeli podsumowującej do CSV ---
 summary_filename = os.path.join(RESULTS_DIR, "svm_summary_results.csv")
 results_df.to_csv(summary_filename, index=False)
 print(f"\nZapisano tabelę podsumowującą do: {summary_filename}")
